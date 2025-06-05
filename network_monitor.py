@@ -23,6 +23,17 @@ import psutil
 class NetworkMonitor:
     def __init__(self, config=None):
         self.config = config or {}
+        self.filters = {
+            'connection_types': self.config.get('connection_types', []),  # tcp, udp, tcp6, udp6
+            'connection_states': self.config.get('connection_states', []),  # ESTABLISHED, LISTEN, etc.
+            'pids': self.config.get('pids', []),  # Конкретные PID
+            'process_names': self.config.get('process_names', []),  # Имена процессов
+            'ports': self.config.get('ports', []),  # Конкретные порты
+            'exclude_local': self.config.get('exclude_local', False),  # Исключить локальные соединения
+            'only_external': self.config.get('only_external', False),  # Только внешние соединения
+            'min_port': self.config.get('min_port', None),  # Минимальный порт
+            'max_port': self.config.get('max_port', None),  # Максимальный порт
+        }
         self.suspicious_patterns = [
             # Подозрительные порты
             r':(6667|6668|6669|6697|7000|31337|12345|54321|1337)',
@@ -901,8 +912,6 @@ def main():
         epilog='Для детальной справки используйте: python3 network_monitor.py --detailed-help',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
-    # Добавляем новую опцию для детальной справки
     parser.add_argument('--detailed-help', action='store_true',
                         help='Показать детальную справку с примерами использования')
 
@@ -930,6 +939,7 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Подробный вывод информации о процессе сканирования')
 
+    add_filter_arguments(parser)
     args = parser.parse_args()
 
     if args.detailed_help:
@@ -945,6 +955,9 @@ def main():
         return
 
     monitor = NetworkMonitor()
+
+    if handle_filter_arguments(args, monitor):
+        return
 
     # Остальная логика остается без изменений
     if args.baseline:
@@ -1010,6 +1023,490 @@ def main():
             monitor.export_results(args.export)
 
 
+def add_filter_arguments(parser):
+    """Добавление аргументов фильтрации в парсер"""
+    filter_group = parser.add_argument_group('Фильтры соединений')
+
+    filter_group.add_argument('--filter-type', nargs='+',
+                              choices=['tcp', 'udp', 'tcp6', 'udp6'],
+                              help='Фильтр по типу соединения')
+
+    filter_group.add_argument('--filter-state', nargs='+',
+                              choices=['ESTABLISHED', 'LISTEN', 'TIME_WAIT', 'CLOSE_WAIT', 'SYN_SENT'],
+                              help='Фильтр по состоянию соединения')
+
+    filter_group.add_argument('--filter-pid', nargs='+', type=int,
+                              help='Фильтр по PID процесса')
+
+    filter_group.add_argument('--filter-process', nargs='+',
+                              help='Фильтр по имени процесса (поддерживает частичное совпадение)')
+
+    filter_group.add_argument('--filter-port', nargs='+', type=int,
+                              help='Фильтр по конкретным портам')
+
+    filter_group.add_argument('--filter-port-range', nargs=2, type=int, metavar=('MIN', 'MAX'),
+                              help='Фильтр по диапазону портов')
+
+    filter_group.add_argument('--exclude-local', action='store_true',
+                              help='Исключить локальные соединения')
+
+    filter_group.add_argument('--only-external', action='store_true',
+                              help='Показать только внешние соединения')
+
+    filter_group.add_argument('--listening-only', action='store_true',
+                              help='Показать только прослушиваемые порты')
+
+    filter_group.add_argument('--process-pattern',
+                              help='Фильтр по регулярному выражению в имени процесса')
+
+
+# Модификация main() для обработки новых аргументов
+def handle_filter_arguments(args, monitor):
+    """Обработка аргументов фильтрации"""
+    filters = {}
+
+    if hasattr(args, 'filter_type') and args.filter_type:
+        filters['connection_types'] = args.filter_type
+
+    if hasattr(args, 'filter_state') and args.filter_state:
+        filters['connection_states'] = args.filter_state
+
+    if hasattr(args, 'filter_pid') and args.filter_pid:
+        filters['pids'] = args.filter_pid
+
+    if hasattr(args, 'filter_process') and args.filter_process:
+        filters['process_names'] = args.filter_process
+
+    if hasattr(args, 'filter_port') and args.filter_port:
+        filters['ports'] = args.filter_port
+
+    if hasattr(args, 'filter_port_range') and args.filter_port_range:
+        filters['min_port'] = args.filter_port_range[0]
+        filters['max_port'] = args.filter_port_range[1]
+
+    if hasattr(args, 'exclude_local') and args.exclude_local:
+        filters['exclude_local'] = True
+
+    if hasattr(args, 'only_external') and args.only_external:
+        filters['only_external'] = True
+
+    # Применяем фильтры
+    monitor.filters.update(filters)
+
+    # Специальные случаи
+    if hasattr(args, 'listening_only') and args.listening_only:
+        connections = monitor.get_listening_ports()
+        monitor.print_filtered_connections(connections, show_details=args.verbose)
+        return True
+
+    if hasattr(args, 'process_pattern') and args.process_pattern:
+        connections = monitor.get_network_connections()
+        filtered = monitor.filter_by_process_pattern(connections, args.process_pattern)
+        monitor.print_filtered_connections(filtered, show_details=args.verbose)
+        return True
+
+    # Если есть любые фильтры, запускаем фильтрованное сканирование
+    if any(filters.values()):
+        monitor.run_filtered_scan()
+        return True
+
+    return False
+
+
+def print_filter_examples():
+    """Примеры использования фильтров"""
+    examples = """
+ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ ФИЛЬТРОВ:
+
+1. Показать только TCP соединения:
+   python3 network_monitor.py --filter-type tcp
+
+2. Показать только установленные соединения:
+   python3 network_monitor.py --filter-state ESTABLISHED
+
+3. Показать соединения конкретного процесса:
+   python3 network_monitor.py --filter-pid 1234
+
+4. Показать соединения процессов по имени:
+   python3 network_monitor.py --filter-process firefox chrome
+
+5. Показать соединения на конкретных портах:
+   python3 network_monitor.py --filter-port 80 443 8080
+
+6. Показать соединения в диапазоне портов:
+   python3 network_monitor.py --filter-port-range 8000 9000
+
+7. Показать только внешние соединения:
+   python3 network_monitor.py --only-external
+
+8. Показать только прослушиваемые порты:
+   python3 network_monitor.py --listening-only
+
+9. Найти процессы по паттерну:
+   python3 network_monitor.py --process-pattern "python.*server"
+
+10. Комбинированные фильтры:
+    python3 network_monitor.py --filter-type tcp --filter-state ESTABLISHED --only-external
+
+11. Фильтрация с подробным выводом:
+    python3 network_monitor.py --filter-process ssh --verbose
+
+12. Анализ подозрительных портов:
+    python3 network_monitor.py --filter-port-range 1337 31337 --verbose
+
+СПЕЦИАЛЬНЫЕ СЦЕНАРИИ:
+
+Мониторинг веб-трафика:
+    python3 network_monitor.py --filter-port 80 443 8080 8443
+
+Поиск SSH соединений:
+    python3 network_monitor.py --filter-port 22 --filter-type tcp
+
+Анализ процесса по PID:
+    python3 network_monitor.py --filter-pid $(pgrep firefox)
+
+Поиск подозрительных соединений:
+    python3 network_monitor.py --only-external --filter-port-range 1024 65535 --process-pattern "python|nc|telnet"
+    """
+    print(examples)
+
+def apply_connection_filters(self, connections):
+    """Применение фильтров к списку соединений"""
+    filtered_connections = []
+
+    for conn in connections:
+        # Фильтр по типу соединения
+        if self.filters['connection_types']:
+            conn_type = conn.get('type', '').lower()
+            if conn_type not in [t.lower() for t in self.filters['connection_types']]:
+                continue
+
+        # Фильтр по состоянию соединения
+        if self.filters['connection_states']:
+            conn_status = conn.get('status', '').upper()
+            if conn_status not in [s.upper() for s in self.filters['connection_states']]:
+                continue
+
+        # Фильтр по PID
+        if self.filters['pids']:
+            conn_pid = conn.get('pid')
+            if conn_pid not in self.filters['pids']:
+                continue
+
+        # Фильтр по имени процесса
+        if self.filters['process_names']:
+            process_name = conn.get('name', '').lower()
+            if not any(name.lower() in process_name for name in self.filters['process_names']):
+                continue
+
+        # Фильтр по портам
+        local_port = conn.get('laddr', [None, None])[1] if conn.get('laddr') else None
+        remote_port = conn.get('raddr', [None, None])[1] if conn.get('raddr') else None
+
+        if self.filters['ports']:
+            if local_port not in self.filters['ports'] and remote_port not in self.filters['ports']:
+                continue
+
+        # Фильтр по диапазону портов
+        if self.filters['min_port'] is not None or self.filters['max_port'] is not None:
+            ports_to_check = [p for p in [local_port, remote_port] if p is not None]
+            if not ports_to_check:
+                continue
+
+            port_in_range = False
+            for port in ports_to_check:
+                if (self.filters['min_port'] is None or port >= self.filters['min_port']) and \
+                        (self.filters['max_port'] is None or port <= self.filters['max_port']):
+                    port_in_range = True
+                    break
+
+            if not port_in_range:
+                continue
+
+        # Фильтр локальных соединений
+        if self.filters['exclude_local']:
+            remote_addr = conn.get('raddr', [None, None])[0] if conn.get('raddr') else None
+            if remote_addr and self._is_local_address(remote_addr):
+                continue
+
+        # Только внешние соединения
+        if self.filters['only_external']:
+            remote_addr = conn.get('raddr', [None, None])[0] if conn.get('raddr') else None
+            if not remote_addr or self._is_local_address(remote_addr):
+                continue
+
+        filtered_connections.append(conn)
+
+    return filtered_connections
+
+
+def _is_local_address(self, addr):
+    """Проверка, является ли адрес локальным"""
+    if not addr:
+        return True
+
+    local_ranges = [
+        '127.',  # localhost
+        '10.',  # Private Class A
+        '172.16.',  # Private Class B (начало)
+        '192.168.',  # Private Class C
+        '169.254.',  # Link-local
+        '::1',  # IPv6 localhost
+        'fe80:',  # IPv6 link-local
+    ]
+
+    for local_range in local_ranges:
+        if addr.startswith(local_range):
+            return True
+
+    # Проверка диапазона 172.16.0.0 - 172.31.255.255
+    if addr.startswith('172.'):
+        try:
+            second_octet = int(addr.split('.')[1])
+            if 16 <= second_octet <= 31:
+                return True
+        except (ValueError, IndexError):
+            pass
+
+    return False
+
+
+def get_filtered_connections(self):
+    """Получение отфильтрованных сетевых соединений"""
+    all_connections = self.get_network_connections()
+    return self.apply_connection_filters(all_connections)
+
+
+def filter_by_process_pattern(self, connections, pattern):
+    """Фильтрация по паттерну в имени процесса или командной строке"""
+    import re
+    filtered = []
+
+    regex = re.compile(pattern, re.IGNORECASE)
+
+    for conn in connections:
+        process_name = conn.get('name', '')
+        cmdline = conn.get('cmdline', '')
+        exe_path = conn.get('exe', '')
+
+        if (regex.search(process_name) or
+                regex.search(cmdline) or
+                regex.search(exe_path)):
+            filtered.append(conn)
+
+    return filtered
+
+
+def get_connections_by_pid(self, target_pid):
+    """Получение всех соединений для конкретного PID"""
+    connections = self.get_network_connections()
+    return [conn for conn in connections if conn.get('pid') == target_pid]
+
+
+def get_connections_by_port_range(self, min_port, max_port, include_local=True):
+    """Получение соединений в определенном диапазоне портов"""
+    connections = self.get_network_connections()
+    filtered = []
+
+    for conn in connections:
+        local_port = conn.get('laddr', [None, None])[1] if conn.get('laddr') else None
+        remote_port = conn.get('raddr', [None, None])[1] if conn.get('raddr') else None
+
+        ports_to_check = []
+        if include_local and local_port:
+            ports_to_check.append(local_port)
+        if remote_port:
+            ports_to_check.append(remote_port)
+
+        for port in ports_to_check:
+            if min_port <= port <= max_port:
+                filtered.append(conn)
+                break
+
+    return filtered
+
+
+def get_external_connections_only(self):
+    """Получение только внешних соединений (исключая локальные)"""
+    connections = self.get_network_connections()
+    external = []
+
+    for conn in connections:
+        remote_addr = conn.get('raddr', [None, None])[0] if conn.get('raddr') else None
+        if remote_addr and not self._is_local_address(remote_addr):
+            external.append(conn)
+
+    return external
+
+
+def get_listening_ports(self, protocol=None):
+    """Получение всех прослушиваемых портов"""
+    connections = self.get_network_connections()
+    listening = []
+
+    for conn in connections:
+        if conn.get('status') == 'LISTEN':
+            if protocol is None or conn.get('type', '').lower() == protocol.lower():
+                listening.append(conn)
+
+    return listening
+
+
+def group_connections_by_process(self, connections=None):
+    """Группировка соединений по процессам"""
+    if connections is None:
+        connections = self.get_network_connections()
+
+    grouped = {}
+
+    for conn in connections:
+        pid = conn.get('pid', 'Unknown')
+        process_name = conn.get('name', 'Unknown')
+        key = f"{process_name} (PID: {pid})"
+
+        if key not in grouped:
+            grouped[key] = {
+                'process_info': {
+                    'pid': pid,
+                    'name': process_name,
+                    'exe': conn.get('exe', ''),
+                    'cmdline': conn.get('cmdline', '')
+                },
+                'connections': []
+            }
+
+        grouped[key]['connections'].append(conn)
+
+    return grouped
+
+
+def print_filtered_connections(self, connections, show_details=False):
+    """Красивый вывод отфильтрованных соединений"""
+    if not connections:
+        print("Соединений не найдено с заданными фильтрами")
+        return
+
+    print(f"\n{'=' * 80}")
+    print(f"НАЙДЕНО СОЕДИНЕНИЙ: {len(connections)}")
+    print(f"{'=' * 80}")
+
+    # Группируем по процессам для лучшего отображения
+    grouped = self.group_connections_by_process(connections)
+
+    for process_key, process_data in grouped.items():
+        print(f"\n📋 {process_key}")
+        print("-" * 60)
+
+        process_info = process_data['process_info']
+        if show_details:
+            print(f"   Исполняемый файл: {process_info.get('exe', 'N/A')}")
+            print(f"   Командная строка: {process_info.get('cmdline', 'N/A')}")
+
+        for i, conn in enumerate(process_data['connections'], 1):
+            local_addr = conn.get('laddr', [None, None])
+            remote_addr = conn.get('raddr', [None, None])
+
+            local_str = f"{local_addr[0]}:{local_addr[1]}" if local_addr[0] else "N/A"
+            remote_str = f"{remote_addr[0]}:{remote_addr[1]}" if remote_addr and remote_addr[0] else "N/A"
+
+            status = conn.get('status', 'N/A')
+            conn_type = conn.get('type', 'N/A').upper()
+
+            print(f"   {i:2d}. {conn_type:4s} {local_str:22s} -> {remote_str:22s} [{status}]")
+
+            if show_details:
+                create_time = conn.get('create_time')
+                if create_time:
+                    from datetime import datetime
+                    create_dt = datetime.fromtimestamp(create_time)
+                    print(f"       Создан: {create_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def run_filtered_scan(self, filters=None):
+    """Запуск сканирования с применением фильтров"""
+    if filters:
+        self.filters.update(filters)
+
+    print("Запуск сканирования с фильтрами...")
+    print("Активные фильтры:")
+
+    for filter_name, filter_value in self.filters.items():
+        if filter_value:
+            print(f"  - {filter_name}: {filter_value}")
+
+    # Получаем отфильтрованные соединения
+    filtered_connections = self.get_filtered_connections()
+
+    # Применяем анализ к отфильтрованным данным
+    print(f"\nОбщее количество соединений: {len(self.get_network_connections())}")
+    print(f"После применения фильтров: {len(filtered_connections)}")
+
+    if filtered_connections:
+        self.print_filtered_connections(filtered_connections, show_details=True)
+
+        # Анализ паттернов только для отфильтрованных соединений
+        patterns = self.analyze_filtered_patterns(filtered_connections)
+
+        if any(patterns.values()):
+            print(f"\n{'=' * 60}")
+            print("ОБНАРУЖЕННЫЕ ПАТТЕРНЫ В ОТФИЛЬТРОВАННЫХ ДАННЫХ:")
+            print(f"{'=' * 60}")
+
+            for pattern_type, items in patterns.items():
+                if items:
+                    print(f"\n{pattern_type.upper().replace('_', ' ')}:")
+                    for item in items:
+                        print(f"  - {item.get('reason', 'Unknown')}")
+
+    return filtered_connections
+
+
+def analyze_filtered_patterns(self, connections):
+    """Анализ паттернов для отфильтрованных соединений"""
+    patterns = {
+        'suspicious_ports': [],
+        'unusual_connections': [],
+        'high_frequency_connections': [],
+        'encryption_tunnels': []
+    }
+
+    from collections import Counter
+    port_counter = Counter()
+
+    for conn in connections:
+        # Анализ портов
+        if conn.get('raddr'):
+            port = conn['raddr'][1]
+            port_counter[port] += 1
+
+            # Проверка подозрительных портов
+            if port in [6667, 6668, 6669, 6697, 7000, 31337, 12345, 54321, 1337]:
+                patterns['suspicious_ports'].append({
+                    'port': port,
+                    'connection': conn,
+                    'reason': f'Suspicious port {port} detected'
+                })
+
+        # Анализ необычных соединений
+        process_name = conn.get('name', '').lower()
+        if process_name in ['nc', 'ncat', 'telnet', 'socat', 'python', 'python3']:
+            patterns['unusual_connections'].append({
+                'process': process_name,
+                'connection': conn,
+                'reason': f'Potentially suspicious process: {process_name}'
+            })
+
+    # Высокочастотные соединения
+    for port, count in port_counter.most_common(5):
+        if count > 5:  # Порог для отфильтрованных данных ниже
+            patterns['high_frequency_connections'].append({
+                'port': port,
+                'count': count,
+                'reason': f'High frequency connections to port {port}: {count} connections'
+            })
+
+    return patterns
+
 def interactive_help():
     """Интерактивная справка с выбором режима"""
     print("\n" + "=" * 60)
@@ -1059,10 +1556,10 @@ def show_banner():
     """Показывает баннер программы"""
     banner = """
     ╔══════════════════════════════════════════════════════════════╗
-    ║              Advanced Network Connection Monitor              ║
-    ║                     v2.0 Security Edition                    ║
+    ║              Advanced Network Connection Monitor             ║
+    ║                     v1.0.0 Security Edition                  ║
     ║                                                              ║
-    ║  Обнаружение скрытых соединений, руткитов и угроз           ║
+    ║  Обнаружение скрытых соединений, руткитов и угроз            ║
     ║  Detection of hidden connections, rootkits and threats       ║
     ╚══════════════════════════════════════════════════════════════╝
     """
