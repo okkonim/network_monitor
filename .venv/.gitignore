@@ -1,0 +1,27 @@
+# created by virtualenv automatically
+# Byte-compiled / optimized / DLL files
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Logs and databases
+*.log
+*.sqlite3
+network_monitor.db
+
+# Baseline file
+network_baseline.json
+
+# Exported reports
+network_*.json
+network_*.html
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
