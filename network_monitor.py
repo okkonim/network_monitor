@@ -576,31 +576,30 @@ class NetworkMonitor:
         return results
 
     def generate_html_report(self, results):
-        """Генерация HTML отчета"""
-        html_template = """
+        html_template = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>Network Security Scan Report</title>
             <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .alert-high { color: red; font-weight: bold; }
-                .alert-medium { color: orange; }
-                .alert-low { color: green; }
-                table { border-collapse: collapse; width: 100%; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f2f2f2; }
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .alert-high {{ color: red; font-weight: bold; }}
+                .alert-medium {{ color: orange; }}
+                .alert-low {{ color: green; }}
+                table {{ border-collapse: collapse; width: 100%; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; }}
             </style>
         </head>
         <body>
             <h1>Network Security Scan Report</h1>
-            <p>Generated: {timestamp}</p>
+            <p>Generated: {results['timestamp']}</p>
 
             <h2>Summary</h2>
             <ul>
-                <li>Total Connections: {total_connections}</li>
-                <li>Suspicious Patterns: {suspicious_count}</li>
-                <li>Alerts: {alert_count}</li>
+                <li>Total Connections: {len(results['connections'])}</li>
+                <li>Suspicious Patterns: {len(results['suspicious_patterns'].get('suspicious_ports', []))}</li>
+                <li>Alerts: {len(results['alerts'])}</li>
             </ul>
 
             <h2>Active Connections</h2>
@@ -611,17 +610,8 @@ class NetworkMonitor:
                     <th>Process</th>
                     <th>Status</th>
                 </tr>
-                {connection_rows}
-            </table>
-
-            <h2>Alerts</h2>
-            {alerts_section}
-        </body>
-        </html>
         """
 
-        # Формирование строк таблицы соединений
-        connection_rows = ""
         for conn in results['connections']:
             local_addr = f"{conn.get('laddr', ['', ''])[0]}:{conn.get('laddr', ['', ''])[1]}"
             remote_addr = f"{conn.get('raddr', ['', ''])[0]}:{conn.get('raddr', ['', ''])[1]}" if conn.get(
@@ -629,7 +619,7 @@ class NetworkMonitor:
             process = conn.get('name', 'Unknown')
             status = conn.get('status', 'Unknown')
 
-            connection_rows += f"""
+            html_template += f"""
                 <tr>
                     <td>{local_addr}</td>
                     <td>{remote_addr}</td>
@@ -638,25 +628,26 @@ class NetworkMonitor:
                 </tr>
             """
 
-        # Формирование секции алертов
-        alerts_section = "<ul>"
+        html_template += """
+            </table>
+
+            <h2>Alerts</h2>
+            <ul>
+        """
+
         for alert in results['alerts']:
             severity_class = f"alert-{alert.get('severity', 'low')}"
-            alerts_section += f'<li class="{severity_class}">{alert.get("description", "")}</li>'
-        alerts_section += "</ul>"
+            html_template += f'<li class="{severity_class}">{alert.get("description", "")}</li>'
 
-        html_content = html_template.format(
-            timestamp=results['timestamp'],
-            total_connections=len(results['connections']),
-            suspicious_count=len(results['suspicious_patterns'].get('suspicious_ports', [])),
-            alert_count=len(results['alerts']),
-            connection_rows=connection_rows,
-            alerts_section=alerts_section
-        )
+        html_template += """
+            </ul>
+        </body>
+        </html>
+        """
 
         filename = f'network_report_{int(time.time())}.html'
         with open(filename, 'w') as f:
-            f.write(html_content)
+            f.write(html_template)
         print(f"HTML отчет сохранен в {filename}")
 
     def run_comprehensive_scan(self):
@@ -941,7 +932,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Обработка новых опций справки
     if args.detailed_help:
         print_detailed_help()
         return
