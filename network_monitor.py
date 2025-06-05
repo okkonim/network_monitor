@@ -4,23 +4,20 @@ Advanced Network Connection Monitor for Linux
 Comprehensive tool for detecting hidden and suspicious network connections
 """
 
-import os
-import sys
-import json
-import time
-import socket
-import struct
-import subprocess
-import threading
 import argparse
 import hashlib
+import json
+import os
+import socket
 import sqlite3
+import struct
+import subprocess
+import sys
+import time
+from collections import Counter
 from datetime import datetime
-from collections import defaultdict, Counter
-import ipaddress
-import re
+
 import psutil
-import netaddr
 
 
 class NetworkMonitor:
@@ -750,19 +747,216 @@ class NetworkMonitor:
         return results
 
 
+def print_detailed_help():
+    """Выводит детальную справку по использованию программы"""
+    help_text = """
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    Advanced Network Connection Monitor                       ║
+║                     Комплексный мониторинг сетевых подключений               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+ОПИСАНИЕ:
+    Продвинутый инструмент для обнаружения скрытых и подозрительных сетевых 
+    соединений в Linux системах. Может обнаруживать руткиты, скрытые процессы,
+    подозрительные соединения и аномальную сетевую активность.
+
+ИСПОЛЬЗОВАНИЕ:
+    python3 network_monitor.py [ОПЦИИ]
+
+ОСНОВНЫЕ КОМАНДЫ:
+    --scan                  Запуск полного комплексного сканирования системы
+                           (рекомендуется для первого использования)
+
+    --baseline             Создание базовой линии нормальной сетевой активности
+                          (сохраняется в network_baseline.json)
+
+    --compare              Сравнение текущего состояния с базовой линией
+                          (требует предварительного создания baseline)
+
+    --monitor СЕКУНДЫ      Непрерывный мониторинг в реальном времени
+                          Пример: --monitor 3600 (мониторинг на 1 час)
+
+ОПЦИИ ЭКСПОРТА:
+    --export FORMAT        Формат экспорта результатов
+                          json - JSON файл (по умолчанию)
+                          html - HTML отчет с графическим интерфейсом
+
+    --verbose, -v          Подробный вывод информации
+
+ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ:
+
+    1. Быстрое сканирование (без параметров):
+       python3 network_monitor.py
+
+    2. Полное комплексное сканирование:
+       sudo python3 network_monitor.py --scan --export html
+
+    3. Создание базовой линии:
+       python3 network_monitor.py --baseline
+
+    4. Проверка на аномалии:
+       python3 network_monitor.py --compare --verbose
+
+    5. Мониторинг в реальном времени:
+       python3 network_monitor.py --monitor 1800
+
+    6. Полный анализ с экспортом в HTML:
+       sudo python3 network_monitor.py --scan --export html --verbose
+
+ВОЗМОЖНОСТИ ОБНАРУЖЕНИЯ:
+
+    ✓ Скрытые процессы с сетевой активностью
+    ✓ Подозрительные порты и соединения
+    ✓ Сокрытие соединений руткитами
+    ✓ Аномальные паттерны трафика
+    ✓ Высокочастотные соединения
+    ✓ Туннелирование и шифрование
+    ✓ Docker контейнеры
+    ✓ Network namespaces
+    ✓ Глубокий анализ пакетов (root)
+
+ПОДОЗРИТЕЛЬНЫЕ ИНДИКАТОРЫ:
+
+    • Порты: 6667-6669, 6697, 7000, 31337, 12345, 54321, 1337
+    • IP-адреса: Tor nodes, известные C&C серверы
+    • Процессы: Необычные сетевые утилиты
+    • Поведение: Сокрытие от стандартных утилит
+
+ТРЕБОВАНИЯ:
+
+    Python 3.6+
+    Модули: psutil, netaddr
+
+    Установка зависимостей:
+    pip3 install psutil netaddr
+
+    Для полного функционала требуются root права:
+    sudo python3 network_monitor.py --scan
+
+ФАЙЛЫ РЕЗУЛЬТАТОВ:
+
+    network_baseline.json       - Базовая линия активности
+    network_scan_[timestamp].json - Результаты сканирования
+    network_report_[timestamp].html - HTML отчет
+    network_monitor.db          - База данных результатов
+
+УРОВНИ СЕРЬЕЗНОСТИ УГРОЗ:
+
+    HIGH    - Критические угрозы (скрытые процессы, руткиты)
+    MEDIUM  - Подозрительная активность (новые соединения, порты)  
+    LOW     - Аномалии (изменения в baseline)
+
+ПРИМЕЧАНИЯ:
+
+    • Некоторые функции требуют root привилегий
+    • Первый запуск рекомендуется с --scan
+    • Для регулярного мониторинга используйте --baseline и --compare
+    • HTML отчеты удобны для документирования результатов
+
+АВТОР: Advanced Network Security Tools
+ВЕРСИЯ: 2.0
+    """
+    print(help_text)
+
+
+def print_usage_examples():
+    """Выводит примеры использования"""
+    examples = """
+ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ NETWORK MONITOR:
+
+1. Базовое сканирование:
+   python3 network_monitor.py
+
+2. Полное сканирование безопасности:
+   sudo python3 network_monitor.py --scan
+
+3. Создание эталона и мониторинг:
+   python3 network_monitor.py --baseline
+   # ... через некоторое время ...
+   python3 network_monitor.py --compare
+
+4. Непрерывный мониторинг на 2 часа:
+   python3 network_monitor.py --monitor 7200
+
+5. Детальный анализ с HTML отчетом:
+   sudo python3 network_monitor.py --scan --export html --verbose
+
+6. Быстрая проверка изменений:
+   python3 network_monitor.py --compare --verbose
+
+СЦЕНАРИИ ИСПОЛЬЗОВАНИЯ:
+
+Расследование инцидента:
+    1. sudo python3 network_monitor.py --scan --export html
+    2. Анализ HTML отчета на предмет аномалий
+    3. python3 network_monitor.py --monitor 600 (наблюдение 10 мин)
+
+Регулярный мониторинг:
+    1. python3 network_monitor.py --baseline (еженедельно)
+    2. python3 network_monitor.py --compare (ежедневно)
+    3. Автоматизация через cron
+
+Аудит безопасности:
+    1. sudo python3 network_monitor.py --scan --export html
+    2. Документирование результатов
+    3. Сравнение с предыдущими аудитами
+    """
+    print(examples)
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Advanced Network Connection Monitor')
-    parser.add_argument('--baseline', action='store_true', help='Create baseline of normal activity')
-    parser.add_argument('--compare', action='store_true', help='Compare current state with baseline')
-    parser.add_argument('--monitor', type=int, help='Continuous monitoring for X seconds')
-    parser.add_argument('--scan', action='store_true', help='Run comprehensive security scan')
-    parser.add_argument('--export', choices=['json', 'html'], default='json', help='Export format')
-    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser = argparse.ArgumentParser(
+        description='Advanced Network Connection Monitor - Комплексный мониторинг сетевых подключений',
+        epilog='Для детальной справки используйте: python3 network_monitor.py --detailed-help',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    # Добавляем новую опцию для детальной справки
+    parser.add_argument('--detailed-help', action='store_true',
+                        help='Показать детальную справку с примерами использования')
+
+    parser.add_argument('--examples', action='store_true',
+                        help='Показать примеры использования программы')
+
+    parser.add_argument('--interactive', '-i', action='store_true',
+                        help='Запустить интерактивный режим выбора операций')
+
+    parser.add_argument('--baseline', action='store_true',
+                        help='Создать базовую линию нормальной сетевой активности')
+
+    parser.add_argument('--compare', action='store_true',
+                        help='Сравнить текущее состояние с базовой линией')
+
+    parser.add_argument('--monitor', type=int, metavar='SECONDS',
+                        help='Непрерывный мониторинг на указанное количество секунд')
+
+    parser.add_argument('--scan', action='store_true',
+                        help='Запустить полное комплексное сканирование безопасности')
+
+    parser.add_argument('--export', choices=['json', 'html'], default='json',
+                        help='Формат экспорта результатов: json или html (по умолчанию: json)')
+
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Подробный вывод информации о процессе сканирования')
 
     args = parser.parse_args()
 
+    # Обработка новых опций справки
+    if args.detailed_help:
+        print_detailed_help()
+        return
+
+    if args.examples:
+        print_usage_examples()
+        return
+
+    if args.interactive:
+        interactive_help()
+        return
+
     monitor = NetworkMonitor()
 
+    # Остальная логика остается без изменений
     if args.baseline:
         monitor.generate_baseline()
     elif args.compare:
@@ -770,33 +964,120 @@ def main():
         if anomalies:
             print("Обнаружены аномалии:")
             for anomaly in anomalies:
-                print(f"  {anomaly}")
+                if args.verbose:
+                    print(f"  Детально: {anomaly}")
+                else:
+                    print(f"  {anomaly.get('type', 'Unknown')}: {anomaly.get('description', 'No description')}")
         else:
             print("Аномалий не обнаружено")
     elif args.monitor:
+        print(f"Запуск мониторинга на {args.monitor} секунд...")
+        if args.verbose:
+            print("Режим подробного вывода включен")
         monitor.continuous_monitoring(args.monitor)
     elif args.scan:
+        if args.verbose:
+            print("Запуск полного сканирования в подробном режиме...")
         monitor.run_comprehensive_scan()
     else:
         # По умолчанию запускаем быстрое сканирование
         print("Запуск быстрого сканирования сети...")
+        if args.verbose:
+            print("Для полного сканирования используйте: --scan")
+            print("Для создания базовой линии: --baseline")
+            print("Для помощи: --help или --detailed-help")
+
         connections = monitor.get_network_connections()
         patterns = monitor.analyze_traffic_patterns()
         print(f"Активных соединений: {len(connections)}")
+
+        if args.verbose:
+            print(f"Анализируемые типы паттернов: {list(patterns.keys())}")
+
         # Показываем подозрительные соединения
         suspicious_found = False
         for pattern_type, items in patterns.items():
             if items:
                 suspicious_found = True
                 print(f"\n{pattern_type.upper()}:")
-                for item in items[:5]:  # Показываем первые 5
-                    print(f"  - {item.get('reason', 'Unknown')}")
+                display_count = 5 if not args.verbose else len(items)
+                for item in items[:display_count]:
+                    if args.verbose:
+                        print(f"  - {item}")
+                    else:
+                        print(f"  - {item.get('reason', 'Unknown')}")
+
+                if len(items) > 5 and not args.verbose:
+                    print(f"  ... и еще {len(items) - 5} элементов (используйте --verbose)")
 
         if not suspicious_found:
             print("Подозрительной активности не обнаружено")
+            if args.verbose:
+                print("Это хороший знак! Система выглядит чистой.")
 
         if args.export:
+            print(f"Экспорт результатов в формате {args.export}...")
             monitor.export_results(args.export)
+
+
+def interactive_help():
+    """Интерактивная справка с выбором режима"""
+    print("\n" + "=" * 60)
+    print("             ИНТЕРАКТИВНАЯ СПРАВКА")
+    print("=" * 60)
+
+    options = {
+        '1': ('Быстрое сканирование', 'python3 network_monitor.py'),
+        '2': ('Полное сканирование безопасности', 'sudo python3 network_monitor.py --scan'),
+        '3': ('Создать базовую линию', 'python3 network_monitor.py --baseline'),
+        '4': ('Проверить аномалии', 'python3 network_monitor.py --compare'),
+        '5': ('Мониторинг в реальном времени', 'python3 network_monitor.py --monitor 3600'),
+        '6': ('Экспорт в HTML', 'python3 network_monitor.py --scan --export html'),
+        '0': ('Выход', None)
+    }
+
+    while True:
+        print("\nВыберите режим работы:")
+        for key, (desc, cmd) in options.items():
+            print(f"  {key}. {desc}")
+
+        choice = input("\nВаш выбор (0-6): ").strip()
+
+        if choice == '0':
+            break
+        elif choice in options and choice != '0':
+            desc, cmd = options[choice]
+            print(f"\nВыбран режим: {desc}")
+            print(f"Команда: {cmd}")
+
+            if choice in ['2', '6']:  # Команды, требующие root
+                print("⚠️  Требуются root права для полного функционала")
+
+            confirm = input("Запустить? (y/n): ").strip().lower()
+            if confirm in ['y', 'yes', 'да', 'д']:
+                print(f"Выполняется: {cmd}")
+                try:
+                    os.system(cmd)
+                except KeyboardInterrupt:
+                    print("\nВыполнение прервано")
+            break
+        else:
+            print("Неправильный выбор. Попробуйте еще раз.")
+
+
+def show_banner():
+    """Показывает баннер программы"""
+    banner = """
+    ╔══════════════════════════════════════════════════════════════╗
+    ║              Advanced Network Connection Monitor              ║
+    ║                     v2.0 Security Edition                    ║
+    ║                                                              ║
+    ║  Обнаружение скрытых соединений, руткитов и угроз           ║
+    ║  Detection of hidden connections, rootkits and threats       ║
+    ╚══════════════════════════════════════════════════════════════╝
+    """
+    print(banner)
+
 
 if __name__ == "__main__":
     try:
