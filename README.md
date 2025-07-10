@@ -1,4 +1,4 @@
-# Advanced Network Connection Monitor
+# NetSec Sentinel - Advanced Network Connection Monitor
 
 A comprehensive, cross-platform tool for monitoring network connections and detecting suspicious activity. Built with Python, this monitor provides detailed insights into your system's network behavior.
 
